@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<script src="password.js"></script>
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>The Freelancer's Tax Calculator - TAXPLAINED!</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="calculator-app" class="calculator-container">
+    <!-- The React component will be mounted here -->
+    <p>Loading tax calculator...</p>
+  </div>
+
+  <!-- React and ReactDOM -->
+  <script src="https://unpkg.com/react@17/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@17/umd/react-dom.production.min.js"></script>
+  
+  <!-- Babel for JSX transformation -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  
+  <!-- Main Calculator Script -->
+  <script type="text/babel">
+    // Main component
+    function FreelancerTaxCalculator() {
+      const [inputs, setInputs] = React.useState({
+        freelanceIncome: 800000,
+        expenses: 200000,
+        vatableExpenses: 100000,
+        employmentIncome: 0,
+        employmentTaxWithheld: 0,
+        isVatRegistered: false,
+        showDetailedExpenses: false,
+        detailedExpenses: {
+          homeOffice: 24000, // 2000/month
+          utilities: 12000, // 1000/month
+          internetCommunication: 24000, // 2000/month
+          equipmentDepreciation: 20000,
+          transportation: 12000, // 1000/month
+          professionalDevelopment: 15000,
+          subscriptions: 18000, // 1500/month
+          officeSupplies: 6000, // 500/month
+          marketingAdvertising: 12000, // 1000/month
+          professionalServices: 15000,
+          insuranceFees: 12000, // 1000/month
+          miscellaneous: 30000 // buffer
+        }
+      });
+      
+      const [results, setResults] = React.useState(null);
+      const [error, setError] = React.useState(null);
+      const [activeTab, setActiveTab] = React.useState('calculator');
+
+      // Graduated tax rates table
+      const calculateGraduatedTax = (taxableIncome) => {
+        if (taxableIncome <= 250000) {
+          return 0;
+        } else if (taxableIncome <= 400000) {
+          return (taxableIncome - 250000) * 0.15;
+        } else if (taxableIncome <= 800000) {
+          return 22500 + (taxableIncome - 400000) * 0.20;
+        } else if (taxableIncome <= 2000000) {
+          return 102500 + (taxableIncome - 800000) * 0.25;
+        } else if (taxableIncome <= 8000000) {
+          return 402500 + (taxableIncome - 2000000) * 0.30;
+        } else {
+          return 2202500 + (taxableIncome - 8000000) * 0.35;
+        }
+      };
+
+      // Calculate tax for all methods
+      const calculateTaxes = () => {
+        const { freelanceIncome, expenses, vatableExpenses, employmentIncome, employmentTaxWithheld, isVatRegistered } = inputs;
+        
+        // Parse inputs to ensure they're numbers
+        const parsedFreelanceIncome = parseFloat(freelanceIncome) || 0;
+        const parsedExpenses = parseFloat(expenses) || 0;
+        const parsedVatableExpenses = parseFloat(vatableExpenses) || 0;
+        const parsedEmploymentIncome = parseFloat(employmentIncome) || 0;
+        const parsedEmploymentTaxWithheld = parseFloat(employmentTaxWithheld) || 0;
+        
+        // Validate inputs
+        if (parsedFreelanceIncome < 0 || parsedExpenses < 0 || parsedVatableExpenses < 0 || 
+            parsedEmploymentIncome < 0 || parsedEmploymentTaxWithheld < 0) {
+          setError("All inputs must be non-negative numbers.");
+          return;
+        }
+        
+        if (parsedExpenses > parsedFreelanceIncome) {
+          setError("Expenses cannot exceed freelance income.");
+          return;
+        }
+        
+        if (parsedVatableExpenses > parsedExpenses) {
+          setError("VATable expenses cannot exceed total expenses.");
+          return;
+        }
+        
+        // Clear any previous errors
+        setError(null);
+        
+        // Check if eligible for 8% option (non-VAT, gross sales/receipts not exceeding P3M)
+        const isEligibleFor8Percent = parsedFreelanceIncome <= 3000000;
+        
+        // 1. Graduated rates with itemized deductions
+        const itemizedTaxableIncome = parsedFreelanceIncome - parsedExpenses + parsedEmploymentIncome;
+        const itemizedTax = calculateGraduatedTax(itemizedTaxableIncome);
+        
+        // 2. Graduated rates with 40% OSD
+        const osdDeduction = parsedFreelanceIncome * 0.40;
+        const osdTaxableIncome = parsedFreelanceIncome - osdDeduction + parsedEmploymentIncome;
+        const osdTax = calculateGraduatedTax(osdTaxableIncome);
+        
+        // 3. 8% flat income tax (if eligible)
+        let flatTaxAmount = 0;
+        let flatTaxEligible = isEligibleFor8Percent;
+        let flatTaxExplanation = "";
+        
+        if (flatTaxEligible) {
+          // For 8% option, we need to consider the 250k exemption differently
+          // If there's employment income, the exemption is already used there
+          if (parsedEmploymentIncome > 0) {
+            // The 250k exemption is already used for employment income
+            flatTaxAmount = parsedFreelanceIncome * 0.08;
+            flatTaxExplanation = "Since you have employment income, the P250,000 exemption is already applied to that income. Your freelance income is taxed at 8% of the gross amount.";
+          } else {
+            // No employment income, so we can apply the 250k exemption to freelance income
+            const freelanceTaxableIncome = Math.max(0, parsedFreelanceIncome - 250000);
+            flatTaxAmount = freelanceTaxableIncome * 0.08;
+            flatTaxExplanation = "Your first P250,000 is tax-exempt, and the remainder is taxed at 8%.";
+          }
+          
+          // Add employment income tax if applicable
+          if (parsedEmploymentIncome > 0) {
+            const employmentTax = calculateGraduatedTax(parsedEmploymentIncome);
+            flatTaxAmount += employmentTax - parsedEmploymentTaxWithheld;
+          }
+        } else {
+          flatTaxExplanation = "Not eligible for 8% flat rate because annual gross income exceeds P3,000,000.";
+        }
+        
+        // Calculate VAT (if registered)
+        let outputVat = 0;
+        let inputVat = 0;
+        let netVat = 0;
+        
+        if (isVatRegistered) {
+          outputVat = parsedFreelanceIncome * 0.12;
+          inputVat = parsedVatableExpenses * 0.12;
+          netVat = Math.max(0, outputVat - inputVat); // Cannot be negative
+        }
+        
+        // Calculate percentage tax (3% of gross receipts) - required if not using 8% option and not VAT-registered
+        const percentageTax = !isVatRegistered ? parsedFreelanceIncome * 0.03 : 0;
+        
+        // Find the most tax-efficient option
+        let bestOption = "Itemized Deductions";
+        let minimumTax = itemizedTax + (isVatRegistered ? netVat : percentageTax);
+        
+        if (osdTax + (isVatRegistered ? netVat : percentageTax) < minimumTax) {
+          bestOption = "40% OSD";
+          minimumTax = osdTax + (isVatRegistered ? netVat : percentageTax);
+        }
+        
+        // The 8% option is special - it replaces both income tax and percentage tax
+        if (flatTaxEligible && flatTaxAmount < minimumTax) {
+          bestOption = "8% Flat Rate";
+          minimumTax = flatTaxAmount;
+        }
+        
+        // Prepare comparison data
+        const comparisons = [
+          {
+            method: "Graduated Tax with Itemized Deductions",
+            taxableIncome: itemizedTaxableIncome,
+            incomeTax: itemizedTax,
+            percentageTax: isVatRegistered ? 0 : percentageTax,
+            vatDetails: isVatRegistered ? {
+              outputVat,
+              inputVat,
+              netVat
+            } : null,
+            businessTax: isVatRegistered ? netVat : percentageTax, // Business tax (either VAT or Percentage Tax)
+            totalTax: itemizedTax + (isVatRegistered ? netVat : percentageTax),
+            notes: "Based on actual business expenses with supporting documents."
+          },
+          {
+            method: "Graduated Tax with 40% OSD",
+            taxableIncome: osdTaxableIncome,
+            incomeTax: osdTax,
+            percentageTax: isVatRegistered ? 0 : percentageTax,
+            vatDetails: isVatRegistered ? {
+              outputVat,
+              inputVat,
+              netVat
+            } : null,
+            businessTax: isVatRegistered ? netVat : percentageTax, // Business tax (either VAT or Percentage Tax)
+            totalTax: osdTax + (isVatRegistered ? netVat : percentageTax),
+            notes: "No need to substantiate expenses; automatic 40% deduction."
+          },
+          {
+            method: "8% Flat Income Tax",
+            taxableIncome: flatTaxEligible ? (parsedEmploymentIncome > 0 ? parsedFreelanceIncome : Math.max(0, parsedFreelanceIncome - 250000)) : "Not Eligible",
+            incomeTax: flatTaxEligible ? flatTaxAmount : "Not Eligible",
+            percentageTax: 0, // Percentage tax is not applicable when using 8% option
+            vatDetails: null, // VAT is not applicable when using 8% option
+            businessTax: 0, // 8% is inclusive of business tax
+            totalTax: flatTaxEligible ? flatTaxAmount : "Not Eligible",
+            notes: flatTaxExplanation + " The 8% option REPLACES both income tax and percentage tax/VAT."
+          }
+        ];
+        
+        // Generate recommendations
+        const recommendations = generateRecommendations(comparisons, bestOption, parsedExpenses, parsedFreelanceIncome);
+        
+        // Calculate savings
+        const savings = {
+          vs8Percent: flatTaxEligible ? 
+            Math.max(0, comparisons[0].totalTax - flatTaxAmount, comparisons[1].totalTax - flatTaxAmount) : 
+            "Not Applicable",
+          vsItemized: Math.max(0, comparisons[0].totalTax - minimumTax),
+          vsOSD: Math.max(0, comparisons[1].totalTax - minimumTax)
+        };
+        
+        // Set results
+        setResults({
+          inputs: {
+            freelanceIncome: parsedFreelanceIncome,
+            expenses: parsedExpenses,
+            vatableExpenses: parsedVatableExpenses,
+            employmentIncome: parsedEmploymentIncome,
+            employmentTaxWithheld: parsedEmploymentTaxWithheld,
+            isVatRegistered
+          },
+          comparisons,
+          bestOption,
+          savings,
+          recommendations
+        });
+        
+        // Switch to results tab
+        setActiveTab('results');
+      };
+
+      // Generate personalized tax recommendations
+      const generateRecommendations = (comparisons, bestOption, expenses, freelanceIncome) => {
+        const recommendations = [];
+        
+        // Basic recommendation based on best option
+        recommendations.push(`Based on your inputs, the "${bestOption}" method would result in the lowest total tax liability.`);
+        
+        // Expense tracking recommendation
+        const expenseRatio = expenses / freelanceIncome;
+        if (bestOption === "Itemized Deductions") {
+          recommendations.push("Keep maintaining detailed records of all business expenses with proper documentation.");
+          if (expenseRatio < 0.3) {
+            recommendations.push("Consider looking for additional legitimate business deductions you might be missing.");
+          }
+        } else if (bestOption === "40% OSD" && expenseRatio > 0.35) {
+          recommendations.push("Although OSD is simpler, you're close to the 40% threshold. If you can find more legitimate deductions, itemized might become more advantageous.");
+        } else if (bestOption === "8% Flat Rate") {
+          recommendations.push("With the 8% option, you don't need to track expenses for tax purposes, but it's still good practice for business management.");
+          recommendations.push("Remember that the 8% flat rate REPLACES both income tax and percentage tax/VAT, which is why it's often the most advantageous option when eligible.");
+        }
+        
+        // VAT registration recommendations
+        if (inputs.isVatRegistered) {
+          const vatEfficiency = inputs.vatableExpenses / inputs.freelanceIncome;
+          if (vatEfficiency < 0.3) {
+            recommendations.push("Your input VAT is relatively low compared to your output VAT. Look for more legitimate purchases with VAT to increase your input VAT credits.");
+          } else if (vatEfficiency > 0.7) {
+            recommendations.push("You have a favorable input-to-output VAT ratio. Maintaining this ratio will help minimize your net VAT payments.");
+          }
+          
+          // Compare VAT vs 8% if eligible
+          if (flatTaxEligible) {
+            const vatTotal = bestOption.includes("Itemized") ? comparisons[0].totalTax : comparisons[1].totalTax;
+            const flatTotal = comparisons[2].totalTax;
+            if (flatTotal < vatTotal) {
+              recommendations.push("Consider voluntary de-registration from VAT if possible, as the 8% flat rate would save you significantly on total tax payments.");
+            }
+          }
+        } else if (freelanceIncome > 2500000) {
+          recommendations.push("As your income approaches the P3M VAT threshold, evaluate whether VAT registration might be beneficial based on your expense structure.");
+          if (percentageTax > netVat) {
+            recommendations.push("Based on your current expense structure, VAT registration might be more advantageous than paying percentage tax.");
+          }
+        }
+        
+        // Recommendation for those near thresholds
+        if (freelanceIncome > 2700000 && freelanceIncome <= 3000000) {
+          recommendations.push("Your income is approaching the P3M threshold for 8% eligibility. Consider tax planning if you expect to exceed this amount.");
+        }
+        
+        // Mixed income recommendations
+        if (inputs.employmentIncome > 0 && comparisons[2].taxableIncome !== "Not Eligible") {
+          recommendations.push("As a mixed income earner, carefully review both components of your income to optimize your overall tax position.");
+        }
+        
+        return recommendations;
+      };
